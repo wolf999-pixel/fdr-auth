@@ -1,0 +1,12 @@
+{
+  "name": "fdr-project",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev -- --host 0.0.0.0\"",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "start": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev -- --host 0.0.0.0\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

@@ -1,0 +1,84 @@
+@startuml
+!define Table(name,desc) entity name as "name\n<desc>"
+
+entity roles {
+  * id : uuid
+  --
+  * name : varchar(50)
+}
+
+entity users {
+  * id : uuid
+  --
+  * full_name : varchar
+  * email : varchar
+  * password_hash : varchar
+  * role_id : uuid
+  * created_at : timestamptz
+}
+
+entity documents {
+  * id : uuid
+  --
+  * reference : varchar
+  * subject : text
+  * recipient : text
+  * service : varchar
+  * year : int
+  * file_path : text
+  * file_name : varchar
+  * sha256 : char(64)
+  * created_by : uuid
+  * created_at : timestamptz
+}
+
+entity qr_codes {
+  * id : uuid
+  --
+  * qr_uuid : uuid
+  * document_id : uuid
+  * payload : jsonb
+  * signature : text
+  * token : text
+  * revoked : boolean
+  * created_at : timestamptz
+}
+
+entity signed_documents {
+  * id : uuid
+  --
+  * document_id : uuid
+  * file_path : text
+  * file_name : varchar
+  * uploaded_by : uuid
+  * uploaded_at : timestamptz
+}
+
+entity verifications {
+  * id : uuid
+  --
+  * qr_code_id : uuid
+  * document_id : uuid
+  * verifier_info : jsonb
+  * result : varchar
+  * reason : text
+  * created_at : timestamptz
+}
+
+entity audit_logs {
+  * id : uuid
+  --
+  * user_id : uuid
+  * action : varchar
+  * metadata : jsonb
+  * created_at : timestamptz
+}
+
+roles ||--o{ users : has
+users ||--o{ documents : creates
+documents ||--o{ qr_codes : issues
+documents ||--o| signed_documents : may_have
+qr_codes ||--o{ verifications : verified_by
+users ||--o{ audit_logs : logs
+
+@enduml

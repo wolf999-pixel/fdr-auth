@@ -1,0 +1,24 @@
+# Node & Dependencies
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# Environment Variables
+.env
+.env.local
+*.env
+
+# Build outputs
+dist/
+build/
+
+# Uploads & Temporary files
+uploads/
+*.pdf
+scratch/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

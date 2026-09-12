@@ -1,0 +1,90 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Role {
+  id    String @id @default(uuid()) @db.Uuid
+  name  String @unique
+  users User[]
+}
+
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  full_name     String
+  email         String   @unique
+  password_hash String
+  roleId        String?  @db.Uuid
+  role          Role?    @relation(fields: [roleId], references: [id])
+  documents     Document[]
+  signedDocs    SignedDocument[]
+  auditLogs     AuditLog[]
+  createdAt     DateTime @default(now())
+}
+
+model Document {
+  id           String         @id @default(uuid()) @db.Uuid
+  reference    String?        @unique
+  subject      String?
+  recipient    String?
+  service      String?
+  year         Int?
+  filePath     String
+  fileName     String?
+  sha256       String         @db.Char(64)
+  createdBy    String?        @db.Uuid
+  creator      User?          @relation(fields: [createdBy], references: [id])
+  qrcodes      QrCode[]
+  signed       SignedDocument?
+  verifications Verification[]
+  createdAt    DateTime       @default(now())
+}
+
+model QrCode {
+  id           String         @id @default(uuid()) @db.Uuid
+  qrUuid       String         @unique @db.Uuid
+  documentId   String         @db.Uuid
+  document     Document       @relation(fields: [documentId], references: [id])
+  payload      Json
+  signature    String
+  token        String?
+  revoked      Boolean        @default(false)
+  verifications Verification[]
+  createdAt    DateTime       @default(now())
+}
+
+model SignedDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  documentId String   @db.Uuid @unique
+  document   Document @relation(fields: [documentId], references: [id])
+  filePath   String
+  fileName   String?
+  uploadedBy String?  @db.Uuid
+  uploader   User?    @relation(fields: [uploadedBy], references: [id])
+  uploadedAt DateTime @default(now())
+}
+
+model Verification {
+  id            String    @id @default(uuid()) @db.Uuid
+  qrCodeId      String?   @db.Uuid
+  qrCode        QrCode?   @relation(fields: [qrCodeId], references: [id])
+  documentId    String?   @db.Uuid
+  document      Document? @relation(fields: [documentId], references: [id])
+  verifierInfo  Json?
+  result        String
+  reason        String?
+  createdAt     DateTime  @default(now())
+}
+
+model AuditLog {
+  id        String  @id @default(uuid()) @db.Uuid
+  userId    String? @db.Uuid
+  user      User?   @relation(fields: [userId], references: [id])
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,5 @@
+
+> fdr-qrauth-backend@0.1.0 start
+> node dist/app.js
+
+Server running on port 4000
