@@ -15,6 +15,8 @@ export default function DocumentFormPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [aiNotice, setAiNotice] = useState('');
 
   // Generate a unique reference on component mount
   useEffect(() => {
@@ -29,7 +31,46 @@ export default function DocumentFormPage() {
   const handleChange = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => {
-    setFile(event.target.files?.[0] ?? null);
+    const selected = event.target.files?.[0] ?? null;
+    setFile(selected);
+    setAiNotice('');
+  };
+
+  const handleAutoExtract = async () => {
+    if (!file) {
+      setError('Veuillez d\'abord sélectionner un fichier PDF à analyser.');
+      return;
+    }
+
+    setAnalyzing(true);
+    setError('');
+    setAiNotice('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.post('/documents/analyze-pdf', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.data.success && response.data.metadata) {
+        const meta = response.data.metadata;
+        setForm({
+          reference: meta.reference || form.reference,
+          subject: meta.subject || form.subject,
+          recipient: meta.recipient || form.recipient,
+          service: meta.service || form.service,
+          year: meta.year || form.year,
+        });
+        setAiNotice('✨ Informations extraites avec succès par l\'IA ! Vous pouvez les vérifier ou les ajuster avant enregistrement.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.response?.data?.error || 'Impossible d\'extraire automatiquement les informations. Vous pouvez les saisir manuellement.');
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -97,18 +138,43 @@ export default function DocumentFormPage() {
             Service
             <input value={form.service} onChange={(e) => handleChange('service', e.target.value)} />
           </label>
-          <label className="full-width">
-            Fichier PDF
-            <input type="file" accept="application/pdf" onChange={handleFile} />
-          </label>
+          <div className="full-width" style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <label style={{ display: 'block', fontWeight: 600, marginBottom: 8 }}>
+              Fichier PDF officiel
+              <input type="file" accept="application/pdf" onChange={handleFile} style={{ display: 'block', marginTop: 6 }} />
+            </label>
+
+            {file && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginTop: 12, paddingTop: 10, borderTop: '1px dashed #cbd5e1' }}>
+                <span style={{ fontSize: '0.85rem', color: '#475569' }}>
+                  Fichier sélectionné : <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} Ko)
+                </span>
+                <button
+                  type="button"
+                  className="secondary-btn"
+                  style={{ background: 'linear-gradient(135deg, #7b61ff, #6366f1)', color: '#ffffff', border: 'none', display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', fontSize: '0.85rem' }}
+                  onClick={handleAutoExtract}
+                  disabled={analyzing}
+                >
+                  {analyzing ? '⏳ Analyse IA en cours...' : '✨ Extraire automatiquement (IA)'}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
+        {aiNotice && <div className="success-box" style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', color: '#6b21a8' }}>{aiNotice}</div>}
         {error && <div className="error-box">{error}</div>}
         {message && <div className="success-box">{message}</div>}
 
-        <button type="submit" className="primary-btn" disabled={loading}>
-          {loading ? 'Enregistrement...' : 'Enregistrer le document'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18 }}>
+          <button type="submit" className="primary-btn" disabled={loading}>
+            {loading ? 'Enregistrement & Sécurisation...' : 'Enregistrer et Sécuriser'}
+          </button>
+          <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+            Les informations peuvent être saisies manuellement ou extraites par l'IA.
+          </span>
+        </div>
       </form>
     </div>
   );

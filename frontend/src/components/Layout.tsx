@@ -10,7 +10,7 @@ const navItems = [
   { to: '/history', label: 'Historique' }
 ];
 
-export function Layout() {
+export function LayoutShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
 
   return (
@@ -35,8 +35,16 @@ export function Layout() {
       </aside>
 
       <main className="main-panel">
-        <Outlet />
+        {children}
       </main>
     </div>
+  );
+}
+
+export function Layout() {
+  return (
+    <LayoutShell>
+      <Outlet />
+    </LayoutShell>
   );
 }

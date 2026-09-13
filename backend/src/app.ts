@@ -29,6 +29,12 @@ app.get('/api/', (req, res) => {
   });
 });
 
+app.get('/verify', (req, res) => {
+  const token = req.query.token as string || '';
+  const frontendUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+  return res.redirect(`${frontendUrl}/verify?token=${encodeURIComponent(token)}`);
+});
+
 app.use('/api', routes);
 
 app.use((err: any, req: any, res: any, next: any) => {

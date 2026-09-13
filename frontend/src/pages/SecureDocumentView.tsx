@@ -98,8 +98,9 @@ export default function SecureDocumentView() {
   if (loading) return <div className="panel">Chargement de l’aperçu...</div>;
 
   const qr = document?.qrcodes?.[0];
+  const publicUrl = (import.meta.env.VITE_PUBLIC_URL || window.location.origin).replace(/\/$/, '');
   const verificationUrl = qr?.token
-    ? `${window.location.origin}/verify?token=${encodeURIComponent(qr.token)}`
+    ? `${publicUrl}/verify?token=${encodeURIComponent(qr.token)}`
     : '';
 
   return (

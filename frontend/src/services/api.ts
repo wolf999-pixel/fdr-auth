@@ -20,8 +20,10 @@ api.interceptors.response.use(
       // Clear auth data on 401
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
-      // Redirect to login
-      window.location.href = '/login';
+      // Redirect to login only if not on public verify page
+      if (!window.location.pathname.startsWith('/verify')) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

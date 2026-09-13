@@ -146,7 +146,7 @@ export async function generateQrForDocument(req: Request, res: Response) {
 
   if (existingQr && existingQr.token) {
     const QRCode = require('qrcode');
-    const publicBaseUrl = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
     const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(existingQr.token)}`;
     return res.status(200).json({
       qr: {
@@ -198,7 +198,7 @@ export async function generateQrForDocument(req: Request, res: Response) {
   });
 
   const QRCode = require('qrcode');
-  const publicBaseUrl = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
   const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(token)}`;
   const qrImageDataUrl = await QRCode.toDataURL(verificationUrl);
 
@@ -240,7 +240,7 @@ export async function exportSecurePdf(req: Request, res: Response) {
 
     // Generate QR image with verification URL
     const QRCode = require('qrcode');
-    const publicBaseUrl = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+    const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
     const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(qr.token || '')}`;
     const qrDataUrl = await QRCode.toDataURL(verificationUrl);
 
@@ -423,4 +423,92 @@ export async function getDashboardStats(req: Request, res: Response) {
       monthlyAuthentications,
     }
   });
+}
+
+/**
+ * Analyse intelligente de PDF pour extraire automatiquement les métadonnées administratives
+ */
+export async function analyzePdf(req: Request, res: Response) {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Fichier PDF requis pour l\'analyse' });
+  }
+
+  const filePath = req.file.path;
+  try {
+    const fileBytes = fs.readFileSync(filePath);
+    const { PDFDocument } = require('pdf-lib');
+    const pdfDoc = await PDFDocument.load(fileBytes);
+    
+    // Tentative d'extraction des métadonnées intégrées (titre, sujet, auteur, date)
+    const title = pdfDoc.getTitle() || '';
+    const subject = pdfDoc.getSubject() || '';
+    const author = pdfDoc.getAuthor() || '';
+    const creationDate = pdfDoc.getCreationDate();
+
+    // Recherche de texte brute dans les buffers ou streams
+    const textContent = fileBytes.toString('latin1');
+    const originalName = req.file.originalname || '';
+
+    // Heuristiques intelligentes adaptées à l'administration du Cameroun / Fonds Routier :
+    // 1. Année
+    let detectedYear: string = creationDate ? creationDate.getFullYear().toString() : new Date().getFullYear().toString();
+    const yearMatch = textContent.match(/\b(202[0-9])\b/) || originalName.match(/\b(202[0-9])\b/);
+    if (yearMatch) detectedYear = yearMatch[1];
+
+    // 2. Référence
+    const refMatch = textContent.match(/N[°oº]?\s*([0-9A-Z\/\-_]+(?:\/FDR|\/MINTP|\/SG)?)/i) ||
+                     originalName.match(/(?:DOC|REF|FDR)[-_]([0-9A-Z-_]+)/i);
+    let detectedRef = refMatch ? `REF-${refMatch[1].trim()}` : `DOC-${detectedYear}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    // 3. Objet / Titre
+    let detectedSubject = subject || title;
+    if (!detectedSubject) {
+      const objMatch = textContent.match(/Objet\s*:\s*([^\r\n\.\;]{6,80})/i);
+      if (objMatch) {
+        detectedSubject = objMatch[1].trim();
+      } else {
+        detectedSubject = originalName.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
+      }
+    }
+
+    // 4. Destinataire
+    let detectedRecipient = author;
+    if (!detectedRecipient) {
+      const recMatch = textContent.match(/[AÀ]\s+(?:Monsieur|Madame|l'attention\s+de)\s+([^\r\n\.\;]{4,50})/i) ||
+                       textContent.match(/Destinataire\s*:\s*([^\r\n\.\;]{4,50})/i);
+      if (recMatch) {
+        detectedRecipient = recMatch[1].trim();
+      } else {
+        detectedRecipient = 'Service des Opérations Financières';
+      }
+    }
+
+    // 5. Service émetteur
+    let detectedService = 'Direction Générale';
+    if (/finances?|compta/i.test(textContent) || /finances?/i.test(originalName)) {
+      detectedService = 'Direction des Affaires Financières';
+    } else if (/technique|travaux|route/i.test(textContent) || /technique/i.test(originalName)) {
+      detectedService = 'Direction Technique et Contrôle';
+    } else if (/audit|contrôle/i.test(textContent)) {
+      detectedService = 'Cellule d\'Audit Interne';
+    }
+
+    // Nettoyage du fichier temporaire
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    return res.json({
+      success: true,
+      metadata: {
+        reference: detectedRef,
+        subject: detectedSubject,
+        recipient: detectedRecipient,
+        service: detectedService,
+        year: detectedYear,
+      }
+    });
+  } catch (error: any) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('Erreur analyse PDF:', error);
+    return res.status(500).json({ error: 'Échec de l\'analyse automatique du PDF', details: error.message });
+  }
 }

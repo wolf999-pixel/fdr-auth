@@ -156,7 +156,7 @@ export async function verify(req: Request, res: Response) {
           try {
             const { PDFDocument } = require('pdf-lib');
             const QRCode = require('qrcode');
-            const publicBaseUrl = (process.env.PUBLIC_APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+            const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
             const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(qrRow.token || token)}`;
             const qrDataUrl = await QRCode.toDataURL(verificationUrl);
 

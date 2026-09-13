@@ -7,6 +7,7 @@ const router = Router();
 const upload = multer({ dest: process.env.UPLOADS_DIR || 'uploads/' });
 
 router.get('/stats', authMiddleware.requireAuth, authMiddleware.requireRole(['agent', 'admin']), docController.getDashboardStats);
+router.post('/analyze-pdf', authMiddleware.requireAuth, authMiddleware.requireRole(['agent', 'admin']), upload.single('file'), docController.analyzePdf);
 router.post('/', authMiddleware.requireAuth, authMiddleware.requireRole(['agent', 'admin']), upload.single('file'), docController.createDocument);
 router.get('/', authMiddleware.requireAuth, authMiddleware.requireRole(['agent','admin']), docController.listDocuments);
 router.get('/:id', authMiddleware.requireAuth, authMiddleware.requireRole(['agent','admin']), docController.getDocument);

@@ -82,7 +82,9 @@ export default function QrViewPage() {
     }
   };
 
-  const verificationUrl = qr?.token ? `${window.location.origin}/verify?token=${encodeURIComponent(qr.token)}` : '';
+  // Use the public URL (LAN IP) so QR codes work when scanned from other devices
+  const publicUrl = (import.meta.env.VITE_PUBLIC_URL || window.location.origin).replace(/\/$/, '');
+  const verificationUrl = qr?.token ? `${publicUrl}/verify?token=${encodeURIComponent(qr.token)}` : '';
 
   if (loading) return <div className="panel">Chargement du QR...</div>;
 
