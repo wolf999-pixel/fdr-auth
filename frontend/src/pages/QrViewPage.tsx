@@ -12,12 +12,13 @@ type DocumentInfo = {
   year: number | null;
   fileName: string;
   sha256: string;
-  qrcodes?: Array<{ token?: string; qrUuid?: string; id?: string }>;
+  qrcodes?: Array<{ token?: string; qrUuid?: string; id?: string; verification_url?: string }>;
 };
 
 type QrInfo = {
   qr_uuid: string;
   token: string;
+  verification_url?: string;
   qr_image_data_url?: string;
 };
 
@@ -38,6 +39,7 @@ export default function QrViewPage() {
       setQr({
         qr_uuid: currentQr.qrUuid || currentQr.id || '—',
         token: currentQr.token,
+        verification_url: currentQr.verification_url,
       });
       return;
     }
@@ -82,9 +84,13 @@ export default function QrViewPage() {
     }
   };
 
-  // Use the public URL (LAN IP) so QR codes work when scanned from other devices
-  const publicUrl = (import.meta.env.VITE_PUBLIC_URL || window.location.origin).replace(/\/$/, '');
-  const verificationUrl = qr?.token ? `${publicUrl}/verify?token=${encodeURIComponent(qr.token)}` : '';
+  // Use the public LAN URL so QR codes work when scanned from other devices
+  const publicUrl = (
+    import.meta.env.VITE_PUBLIC_URL ||
+    import.meta.env.VITE_API_BASE_URL?.replace('/api', '') ||
+    window.location.origin
+  ).replace(/\/$/, '');
+  const verificationUrl = qr?.verification_url || (qr?.token ? `${publicUrl}/verify?token=${encodeURIComponent(qr.token)}` : '');
 
   if (loading) return <div className="panel">Chargement du QR...</div>;
 

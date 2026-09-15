@@ -4,6 +4,7 @@ import api from '../services/api';
 import logoUrl from '../fond routier.jpg';
 import { useAuth } from '../contexts/AuthContext';
 import { LayoutShell } from '../components/Layout';
+import PdfCanvasViewer from '../components/PdfCanvasViewer';
 
 type VerificationResponse = {
   result: 'AUTHENTIQUE' | 'NON_AUTHENTIQUE';
@@ -14,6 +15,7 @@ type VerificationResponse = {
     document_id?: string;
   };
   document?: {
+    id?: string | null;
     reference?: string | null;
     subject?: string | null;
     recipient?: string | null;
@@ -33,7 +35,47 @@ export default function VerifyPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [scannedMode, setScannedMode] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const { isAuthenticated } = useAuth();
+
+  const handleDownloadPdf = async () => {
+    const docId = result?.document?.id || result?.qr?.document_id;
+    if (!docId || !token) return;
+
+    setDownloadingPdf(true);
+    const downloadUrl = `/api/documents/${docId}/public-secure-pdf?token=${encodeURIComponent(token)}`;
+
+    try {
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        let errJson = null;
+        try { errJson = await response.json(); } catch (_) {}
+        alert(errJson?.error || `Erreur ${response.status} lors du téléchargement.`);
+        return;
+      }
+
+      const blob = await response.blob();
+      const cleanFileName = (result?.document?.fileName || 'document').replace(/\.pdf$/i, '');
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = `${cleanFileName}-certifie-fdr.pdf`;
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        a.remove();
+        window.URL.revokeObjectURL(blobUrl);
+      }, 60000);
+    } catch (err: any) {
+      console.warn('Blob download failed, opening direct URL:', err);
+      // Fallback direct URL pour smartphones
+      window.open(downloadUrl, '_blank');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const handleFile = (event: ChangeEvent<HTMLInputElement>) => setFile(event.target.files?.[0] ?? null);
 
@@ -164,9 +206,54 @@ export default function VerifyPage() {
             </div>
           )}
 
+          {/* Actions pour le vérificateur : Aperçu complet et Téléchargement PDF */}
+          {isAuthentic && (result.document?.id || result.qr?.document_id) && (
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid #bbf7d0', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+              <button
+                type="button"
+                className="primary-btn"
+                style={{ background: '#047857', display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 20px', fontSize: '1rem', fontWeight: 700 }}
+                onClick={() => handleDownloadPdf()}
+                disabled={downloadingPdf}
+              >
+                {downloadingPdf ? 'Préparation du PDF...' : '📥 Télécharger le document certifié (PDF)'}
+              </button>
+
+              <button
+                type="button"
+                className="secondary-btn"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '12px 18px', fontSize: '0.95rem', borderColor: '#047857', color: '#047857' }}
+                onClick={() => setShowPreview(!showPreview)}
+              >
+                {showPreview ? '🙈 Masquer l’aperçu' : '👁️ Aperçu du document complet avec QR'}
+              </button>
+            </div>
+          )}
+
+          {/* Section d'aperçu dynamique intégré du PDF sécurisé (Canvas PDF.js universel) */}
+          {showPreview && isAuthentic && (result.document?.id || result.qr?.document_id) && (
+            <div style={{ marginTop: 18, background: '#ffffff', borderRadius: 12, padding: '16px', border: '2px solid #22c55e' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <strong style={{ fontSize: '1rem', color: '#166534' }}>
+                  Aperçu officiel certifié — {result.document?.reference || 'Document FDR'}
+                </strong>
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.2rem', padding: '4px 8px' }}
+                >
+                  ✕
+                </button>
+              </div>
+              <PdfCanvasViewer
+                url={`/api/documents/${result.document?.id || result.qr?.document_id}/public-secure-pdf?token=${encodeURIComponent(token)}`}
+              />
+            </div>
+          )}
+
           {/* QR info technique */}
           {result.qr && (
-            <div style={{ marginTop: 12, fontSize: '0.8rem', color: '#64748b' }}>
+            <div style={{ marginTop: 14, fontSize: '0.8rem', color: '#64748b' }}>
               <span>Identifiant unique QR : <code>{result.qr.qr_uuid}</code></span>
             </div>
           )}

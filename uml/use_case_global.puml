@@ -1,0 +1,170 @@
+@startuml
+!theme plain
+skinparam packageStyle rectangle
+skinparam usecase {
+  BackgroundColor<<admin>> #FEF3C7
+  BorderColor<<admin>> #92400E
+  BackgroundColor<<agent>> #DBEAFE
+  BorderColor<<agent>> #1E40AF
+  BackgroundColor<<verif>> #D1FAE5
+  BorderColor<<verif>> #065F46
+  BackgroundColor<<ia>> #F3E8FF
+  BorderColor<<ia>> #7C3AED
+  BackgroundColor<<system>> #F1F5F9
+  BorderColor<<system>> #475569
+}
+
+title Diagramme de cas d'utilisation globale\n**Système d'authentification et de certification numérique des documents**\nFonds Routier du Cameroun (FDR)\n
+
+' ═══════════════ ACTEURS ═══════════════
+
+actor "Administrateur\n(Admin FDR)" as Admin #FBBF24
+actor "Agent\n(Agent FDR)" as Agent #60A5FA
+actor "Vérificateur\nexterne" as Verifier #34D399
+actor "Service IA\n(Google Gemini)" as GeminiAI #A78BFA
+
+' ═══════════════ SYSTÈME ═══════════════
+
+rectangle "Système FDR QR Auth" {
+
+  ' --- Bloc Authentification ---
+  package "Authentification & Accès" {
+    usecase "S'authentifier\n(Login)" as UC_LOGIN <<system>>
+    usecase "S'inscrire\n(Auto-inscription Agent)" as UC_REGISTER <<system>>
+  }
+
+  ' --- Bloc Administration ---
+  package "Administration" {
+    usecase "Créer un compte\nagent / administrateur" as UC_CREATE_AGENT <<admin>>
+    usecase "Lister les comptes\nutilisateurs" as UC_LIST_AGENTS <<admin>>
+    usecase "Consulter le\ntableau de bord" as UC_DASHBOARD <<admin>>
+    usecase "Révoquer un\nQR code" as UC_REVOKE <<admin>>
+  }
+
+  ' --- Bloc Gestion documentaire ---
+  package "Gestion documentaire" {
+    usecase "Téléverser un\ndocument PDF" as UC_UPLOAD <<agent>>
+    usecase "Saisir les métadonnées\nmanuellement" as UC_MANUAL_META <<agent>>
+    usecase "Extraire les métadonnées\nautomatiquement (IA)" as UC_AI_EXTRACT <<ia>>
+    usecase "Consulter l'historique\ndes documents" as UC_HISTORY <<agent>>
+    usecase "Consulter les détails\nd'un document" as UC_DOC_DETAIL <<agent>>
+  }
+
+  ' --- Bloc Sécurisation ---
+  package "Sécurisation & QR Code" {
+    usecase "Générer un QR code\ncryptographique" as UC_GEN_QR <<agent>>
+    usecase "Calculer l'empreinte\nSHA-256" as UC_HASH <<system>>
+    usecase "Signer le token\nJWT" as UC_SIGN_JWT <<system>>
+    usecase "Exporter le PDF\nsécurisé (avec QR)" as UC_EXPORT_PDF <<agent>>
+    usecase "Téléverser le document\nsigné physiquement" as UC_UPLOAD_SIGNED <<agent>>
+  }
+
+  ' --- Bloc Vérification ---
+  package "Vérification & Certification" {
+    usecase "Scanner le QR code\n(smartphone)" as UC_SCAN_QR <<verif>>
+    usecase "Saisir un token\nmanuellement" as UC_MANUAL_TOKEN <<verif>>
+    usecase "Vérifier l'authenticité\ndu document" as UC_VERIFY <<verif>>
+    usecase "Comparer l'empreinte SHA-256\n(avec fichier PDF)" as UC_COMPARE_HASH <<verif>>
+    usecase "Aperçu du document\ncertifié complet" as UC_PREVIEW_PDF <<verif>>
+    usecase "Télécharger le PDF\ncertifié (avec QR)" as UC_DOWNLOAD_PDF <<verif>>
+  }
+
+  ' --- Bloc Audit ---
+  package "Audit & Traçabilité" {
+    usecase "Consulter le journal\nd'audit" as UC_AUDIT <<admin>>
+    usecase "Enregistrer chaque\nvérification" as UC_LOG_VERIF <<system>>
+  }
+}
+
+' ═══════════════ RELATIONS ADMINISTRATEUR ═══════════════
+
+Admin --> UC_LOGIN
+Admin --> UC_DASHBOARD
+Admin --> UC_CREATE_AGENT
+Admin --> UC_LIST_AGENTS
+Admin --> UC_REVOKE
+Admin --> UC_AUDIT
+
+' L'admin hérite de tous les droits de l'agent
+Admin --|> Agent : <<hérite>>
+
+' ═══════════════ RELATIONS AGENT ═══════════════
+
+Agent --> UC_LOGIN
+Agent --> UC_REGISTER
+Agent --> UC_UPLOAD
+Agent --> UC_MANUAL_META
+Agent --> UC_AI_EXTRACT
+Agent --> UC_HISTORY
+Agent --> UC_DOC_DETAIL
+Agent --> UC_GEN_QR
+Agent --> UC_EXPORT_PDF
+Agent --> UC_UPLOAD_SIGNED
+Agent --> UC_VERIFY : "peut aussi\nvérifier"
+
+' ═══════════════ RELATIONS VÉRIFICATEUR ═══════════════
+
+Verifier --> UC_SCAN_QR
+Verifier --> UC_MANUAL_TOKEN
+Verifier --> UC_VERIFY
+Verifier --> UC_COMPARE_HASH
+Verifier --> UC_PREVIEW_PDF
+Verifier --> UC_DOWNLOAD_PDF
+
+' ═══════════════ RELATIONS SERVICE IA ═══════════════
+
+GeminiAI --> UC_AI_EXTRACT : "analyse le\ncontenu PDF"
+
+' ═══════════════ RELATIONS INCLUDE / EXTEND ═══════════════
+
+UC_UPLOAD ..> UC_HASH : <<include>>
+UC_GEN_QR ..> UC_SIGN_JWT : <<include>>
+UC_GEN_QR ..> UC_HASH : <<include>>
+UC_SCAN_QR ..> UC_VERIFY : <<include>>
+UC_MANUAL_TOKEN ..> UC_VERIFY : <<include>>
+UC_VERIFY ..> UC_LOG_VERIF : <<include>>
+
+UC_AI_EXTRACT ..> UC_MANUAL_META : <<extend>>\n"Pré-remplit les\nchamps automatiquement"
+UC_VERIFY ..> UC_COMPARE_HASH : <<extend>>\n"Si fichier PDF\nfourni"
+UC_VERIFY ..> UC_PREVIEW_PDF : <<extend>>\n"Si document\nauthentique"
+UC_VERIFY ..> UC_DOWNLOAD_PDF : <<extend>>\n"Si document\nauthentique"
+
+' ═══════════════ NOTES ═══════════════
+
+note right of UC_AI_EXTRACT
+  Utilise **Google Gemini 2.0 Flash**
+  pour extraire intelligemment :
+  - Référence du document
+  - Objet / Sujet
+  - Destinataire
+  - Service émetteur
+  - Année fiscale
+  
+  **Fallback automatique** sur
+  l'extraction heuristique (regex)
+  si l'IA est indisponible.
+end note
+
+note right of UC_VERIFY
+  Vérification multi-critères :
+  ✓ Validité du token JWT
+  ✓ Intégrité du QR code
+  ✓ Empreinte SHA-256
+  ✓ Statut de révocation
+end note
+
+note bottom of UC_PREVIEW_PDF
+  Aperçu interactif via
+  **PDF.js Canvas Viewer**
+  directement sur smartphone
+end note
+
+note left of UC_CREATE_AGENT
+  L'administrateur attribue :
+  - Nom complet
+  - Login / Email
+  - Mot de passe
+  - Rôle (Agent ou Admin)
+end note
+
+@enduml

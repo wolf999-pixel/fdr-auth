@@ -12,7 +12,7 @@ type DocumentInfo = {
   year: number | null;
   fileName: string;
   sha256: string;
-  qrcodes?: Array<{ id: string; qrUuid: string; token: string; revoked: boolean }>;
+  qrcodes?: Array<{ id: string; qrUuid: string; token: string; revoked: boolean; verification_url?: string }>;
 };
 
 export default function SecureDocumentView() {
@@ -99,9 +99,9 @@ export default function SecureDocumentView() {
 
   const qr = document?.qrcodes?.[0];
   const publicUrl = (import.meta.env.VITE_PUBLIC_URL || window.location.origin).replace(/\/$/, '');
-  const verificationUrl = qr?.token
+  const verificationUrl = qr?.verification_url || (qr?.token
     ? `${publicUrl}/verify?token=${encodeURIComponent(qr.token)}`
-    : '';
+    : '');
 
   return (
     <div>

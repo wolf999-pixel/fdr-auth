@@ -56,6 +56,7 @@ export default function DocumentFormPage() {
 
       if (response.data.success && response.data.metadata) {
         const meta = response.data.metadata;
+        const engine = response.data.engine;
         setForm({
           reference: meta.reference || form.reference,
           subject: meta.subject || form.subject,
@@ -63,7 +64,11 @@ export default function DocumentFormPage() {
           service: meta.service || form.service,
           year: meta.year || form.year,
         });
-        setAiNotice('✨ Informations extraites avec succès par l\'IA ! Vous pouvez les vérifier ou les ajuster avant enregistrement.');
+        if (engine === 'gemini-ai') {
+          setAiNotice('🤖 Informations extraites avec précision par l’IA Google Gemini ! Vous pouvez les vérifier ou les ajuster avant enregistrement.');
+        } else {
+          setAiNotice('✨ Informations extraites par analyse documentaire ! Vous pouvez les vérifier ou les ajuster avant enregistrement.');
+        }
       }
     } catch (err: any) {
       console.error(err);

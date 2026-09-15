@@ -29,9 +29,11 @@ app.get('/api/', (req, res) => {
   });
 });
 
+import { getPublicBaseUrl } from './utils/network';
+
 app.get('/verify', (req, res) => {
   const token = req.query.token as string || '';
-  const frontendUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+  const frontendUrl = getPublicBaseUrl();
   return res.redirect(`${frontendUrl}/verify?token=${encodeURIComponent(token)}`);
 });
 
@@ -46,7 +48,8 @@ const port = process.env.PORT || 4000;
 
 ensureDefaultRolesAndUsers()
   .then(() => {
-    app.listen(port, () => console.log(`Server running on port ${port}`));
+    const portNumber = Number(port);
+    app.listen(portNumber, '0.0.0.0', () => console.log(`Server running on port ${portNumber} (0.0.0.0)`));
   })
   .catch((error) => {
     console.error('Failed to initialize application bootstrap:', error);

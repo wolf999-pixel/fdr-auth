@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../prisma/client';
 import { computeSha256 } from '../utils/demoStore';
 import { validatePdfFile } from '../utils/fileValidation';
+import { getPublicBaseUrl } from '../utils/network';
 
 export async function createDocument(req: Request, res: Response) {
   let tempFilePath: string | null = null;
@@ -105,7 +106,18 @@ export async function getDocument(req: Request, res: Response) {
     });
 
     if (!doc) return res.status(404).json({ error: 'Document not found' });
-    return res.json({ document: { ...doc, signedDocument: doc.signed || null } });
+    const publicBaseUrl = getPublicBaseUrl();
+    const mappedQrCodes = doc.qrcodes.map((qr) => ({
+      ...qr,
+      verification_url: `${publicBaseUrl}/verify?token=${encodeURIComponent(qr.token || '')}`
+    }));
+    return res.json({
+      document: {
+        ...doc,
+        qrcodes: mappedQrCodes,
+        signedDocument: doc.signed || null
+      }
+    });
   } catch (error: any) {
     console.error('Error getting document:', error);
     return res.status(500).json({ error: 'Failed to get document', details: error.message });
@@ -146,7 +158,7 @@ export async function generateQrForDocument(req: Request, res: Response) {
 
   if (existingQr && existingQr.token) {
     const QRCode = require('qrcode');
-    const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+    const publicBaseUrl = getPublicBaseUrl();
     const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(existingQr.token)}`;
     return res.status(200).json({
       qr: {
@@ -198,7 +210,7 @@ export async function generateQrForDocument(req: Request, res: Response) {
   });
 
   const QRCode = require('qrcode');
-  const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+  const publicBaseUrl = getPublicBaseUrl();
   const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(token)}`;
   const qrImageDataUrl = await QRCode.toDataURL(verificationUrl);
 
@@ -240,7 +252,7 @@ export async function exportSecurePdf(req: Request, res: Response) {
 
     // Generate QR image with verification URL
     const QRCode = require('qrcode');
-    const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+    const publicBaseUrl = getPublicBaseUrl();
     const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(qr.token || '')}`;
     const qrDataUrl = await QRCode.toDataURL(verificationUrl);
 
@@ -425,8 +437,108 @@ export async function getDashboardStats(req: Request, res: Response) {
   });
 }
 
+export async function publicSecurePdf(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const token = req.query.token as string;
+
+    if (!token) {
+      return res.status(400).json({ error: 'Token de vérification requis' });
+    }
+
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      return res.status(400).json({ error: 'Format d’identifiant de document invalide' });
+    }
+
+    // Vérifier la validité du token JWT
+    const secret = process.env.JWT_SECRET || 'devsecret';
+    let payload: any;
+    try {
+      payload = jwt.verify(token, secret);
+    } catch (tokenErr: any) {
+      return res.status(401).json({ error: 'Token de vérification invalide ou expiré' });
+    }
+
+    // Vérifier que le token correspond bien au document demandé
+    const qr = await prisma.qrCode.findFirst({
+      where: {
+        documentId: id,
+        OR: [
+          { token },
+          { qrUuid: payload.qr_uuid }
+        ]
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    if (!qr) {
+      return res.status(403).json({ error: 'Le token ne correspond pas à ce document' });
+    }
+
+    if (qr.revoked) {
+      return res.status(403).json({ error: 'Le QR code de ce document a été révoqué' });
+    }
+
+    const doc = await prisma.document.findUnique({ where: { id } });
+    if (!doc) return res.status(404).json({ error: 'Document non trouvé' });
+    if (!fs.existsSync(doc.filePath)) {
+      return res.status(404).json({ error: 'Fichier introuvable sur le serveur' });
+    }
+
+    // Génération du PDF sécurisé avec le QR code
+    const QRCode = require('qrcode');
+    const publicBaseUrl = getPublicBaseUrl();
+    const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(qr.token || token)}`;
+    const qrDataUrl = await QRCode.toDataURL(verificationUrl);
+
+    const { PDFDocument } = require('pdf-lib');
+    const origBytes = fs.readFileSync(doc.filePath);
+    const pdfDoc = await PDFDocument.load(origBytes);
+    const pages = pdfDoc.getPages();
+    if (!pages || pages.length === 0) {
+      return res.status(400).json({ error: 'Le PDF ne contient aucune page' });
+    }
+
+    const pngImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
+    const pngImage = await pdfDoc.embedPng(pngImageBytes);
+
+    const page = pages[pages.length - 1];
+    const { width } = page.getSize();
+    const qrSize = Math.min(58, Math.max(40, width * 0.12));
+    const x = (width - qrSize) / 2;
+    const y = 25;
+
+    page.drawImage(pngImage, {
+      x,
+      y,
+      width: qrSize,
+      height: qrSize
+    });
+
+    const modifiedPdfBytes = await pdfDoc.save();
+    const cleanFileName = (doc.fileName || 'document').replace(/\.pdf$/i, '');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${cleanFileName.replace(/\s+/g, '_')}-securise.pdf"`
+    );
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(Buffer.from(modifiedPdfBytes));
+  } catch (error: any) {
+    console.error('Erreur publicSecurePdf:', error);
+    return res.status(500).json({
+      error: 'Échec de génération du PDF sécurisé public',
+      details: error.message
+    });
+  }
+}
+
 /**
  * Analyse intelligente de PDF pour extraire automatiquement les métadonnées administratives
+ * Utilise l'IA Google Gemini (gemini-3.6-flash) avec extraction de texte pdf-parse
+ * Possède un repli automatique par analyse heuristique / regex en cas d'indisponibilité réseau
  */
 export async function analyzePdf(req: Request, res: Response) {
   if (!req.file) {
@@ -434,81 +546,157 @@ export async function analyzePdf(req: Request, res: Response) {
   }
 
   const filePath = req.file.path;
+  const originalName = req.file.originalname || '';
+
   try {
     const fileBytes = fs.readFileSync(filePath);
-    const { PDFDocument } = require('pdf-lib');
-    const pdfDoc = await PDFDocument.load(fileBytes);
-    
-    // Tentative d'extraction des métadonnées intégrées (titre, sujet, auteur, date)
-    const title = pdfDoc.getTitle() || '';
-    const subject = pdfDoc.getSubject() || '';
-    const author = pdfDoc.getAuthor() || '';
-    const creationDate = pdfDoc.getCreationDate();
+    let extractedText = '';
 
-    // Recherche de texte brute dans les buffers ou streams
-    const textContent = fileBytes.toString('latin1');
-    const originalName = req.file.originalname || '';
+    try {
+      const pdfModule = require('pdf-parse');
+      if (pdfModule.PDFParse) {
+        const parser = new pdfModule.PDFParse(new Uint8Array(fileBytes));
+        const res = await parser.getText();
+        extractedText = res.text || '';
+      } else if (typeof pdfModule === 'function') {
+        const parsed = await pdfModule(fileBytes);
+        extractedText = parsed.text || '';
+      }
+    } catch (parseErr: any) {
+      console.warn('pdf-parse n\'a pas pu extraire tout le texte, utilisation du fallback binaire:', parseErr.message);
+      extractedText = fileBytes.toString('latin1');
+    }
 
-    // Heuristiques intelligentes adaptées à l'administration du Cameroun / Fonds Routier :
-    // 1. Année
-    let detectedYear: string = creationDate ? creationDate.getFullYear().toString() : new Date().getFullYear().toString();
-    const yearMatch = textContent.match(/\b(202[0-9])\b/) || originalName.match(/\b(202[0-9])\b/);
-    if (yearMatch) detectedYear = yearMatch[1];
+    const apiKey = process.env.GEMINI_API_KEY;
+    let aiExtracted = false;
+    let metadata = {
+      reference: '',
+      subject: '',
+      recipient: '',
+      service: '',
+      year: new Date().getFullYear().toString(),
+      engine: 'heuristics'
+    };
 
-    // 2. Référence
-    const refMatch = textContent.match(/N[°oº]?\s*([0-9A-Z\/\-_]+(?:\/FDR|\/MINTP|\/SG)?)/i) ||
-                     originalName.match(/(?:DOC|REF|FDR)[-_]([0-9A-Z-_]+)/i);
-    let detectedRef = refMatch ? `REF-${refMatch[1].trim()}` : `DOC-${detectedYear}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    if (apiKey && extractedText.trim().length > 20) {
+      try {
+        const { GoogleGenerativeAI } = require('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
 
-    // 3. Objet / Titre
-    let detectedSubject = subject || title;
-    if (!detectedSubject) {
-      const objMatch = textContent.match(/Objet\s*:\s*([^\r\n\.\;]{6,80})/i);
+        const prompt = `Tu es un expert en gestion documentaire et archivage administratif au Fonds Routier du Cameroun.
+Analyse le texte suivant extrait d'un document administratif officiel (PDF intitulé "${originalName}") et extrait précisément les métadonnées clés.
+
+Texte du document:
+"""
+${extractedText.slice(0, 6000)}
+"""
+
+Réponds STRICTEMENT sous la forme d'un objet JSON valide sans balises markdown, avec exactement ces champs:
+{
+  "reference": "la référence ou le numéro du document (ex: N° 124/FDR/DG/2026 ou DOC-2026-...). Si absent, invente une référence administrative officielle cohérente",
+  "subject": "l'objet précis de la lettre, décision ou correspondance administrative (ex: Mandatement des décomptes de travaux d'entretien routier)",
+  "recipient": "le destinataire ou la personne/service visé (ex: Monsieur le Directeur des Affaires Financières, ou Société BTP Cameroun)",
+  "service": "le service ou direction émettrice au Fonds Routier (ex: Direction Générale, Direction Technique et Contrôle, Direction des Affaires Financières, Cellule Informatique)",
+  "year": "l'année civile concernée au format à 4 chiffres (ex: 2026)"
+}`;
+
+        const aiResult = await model.generateContent(prompt);
+        let rawResponse = aiResult.response.text().trim();
+        // Nettoyer les backticks markdown éventuels
+        if (rawResponse.startsWith('```json')) {
+          rawResponse = rawResponse.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+        } else if (rawResponse.startsWith('```')) {
+          rawResponse = rawResponse.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+        }
+
+        const parsedJson = JSON.parse(rawResponse);
+        if (parsedJson && (parsedJson.subject || parsedJson.reference)) {
+          metadata = {
+            reference: parsedJson.reference || '',
+            subject: parsedJson.subject || '',
+            recipient: parsedJson.recipient || '',
+            service: parsedJson.service || '',
+            year: parsedJson.year ? String(parsedJson.year) : new Date().getFullYear().toString(),
+            engine: 'gemini-ai'
+          };
+          aiExtracted = true;
+        }
+      } catch (aiErr: any) {
+        console.warn('L\'extraction IA Gemini a échoué, repli sur l\'extraction heuristique locale:', aiErr.message);
+      }
+    }
+
+    // Repli heuristique si Gemini n'a pas pu traiter
+    if (!aiExtracted) {
+      const { PDFDocument } = require('pdf-lib');
+      let creationDate: Date | undefined;
+      try {
+        const pdfDoc = await PDFDocument.load(fileBytes);
+        creationDate = pdfDoc.getCreationDate();
+      } catch (_) {}
+
+      let detectedYear = creationDate ? creationDate.getFullYear().toString() : new Date().getFullYear().toString();
+      const yearMatch = extractedText.match(/\b(202[0-9])\b/) || originalName.match(/\b(202[0-9])\b/);
+      if (yearMatch) detectedYear = yearMatch[1];
+
+      const refMatch = extractedText.match(/N[°oº]?\s*([0-9A-Z\/\-_]+(?:\/FDR|\/MINTP|\/SG)?)/i) ||
+                       originalName.match(/(?:DOC|REF|FDR)[-_]([0-9A-Z-_]+)/i);
+      const detectedRef = refMatch ? `REF-${refMatch[1].trim()}` : `DOC-${detectedYear}-${Date.now().toString().slice(-6)}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+      let detectedSubject = '';
+      const objMatch = extractedText.match(/Objet\s*:\s*([^\r\n\.\;]{6,100})/i);
       if (objMatch) {
         detectedSubject = objMatch[1].trim();
       } else {
         detectedSubject = originalName.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
       }
-    }
 
-    // 4. Destinataire
-    let detectedRecipient = author;
-    if (!detectedRecipient) {
-      const recMatch = textContent.match(/[AÀ]\s+(?:Monsieur|Madame|l'attention\s+de)\s+([^\r\n\.\;]{4,50})/i) ||
-                       textContent.match(/Destinataire\s*:\s*([^\r\n\.\;]{4,50})/i);
+      let detectedRecipient = '';
+      const recMatch = extractedText.match(/[AÀ]\s+(?:Monsieur|Madame|l'attention\s+de)\s+([^\r\n\.\;]{4,60})/i) ||
+                       extractedText.match(/Destinataire\s*:\s*([^\r\n\.\;]{4,60})/i);
       if (recMatch) {
         detectedRecipient = recMatch[1].trim();
       } else {
         detectedRecipient = 'Service des Opérations Financières';
       }
-    }
 
-    // 5. Service émetteur
-    let detectedService = 'Direction Générale';
-    if (/finances?|compta/i.test(textContent) || /finances?/i.test(originalName)) {
-      detectedService = 'Direction des Affaires Financières';
-    } else if (/technique|travaux|route/i.test(textContent) || /technique/i.test(originalName)) {
-      detectedService = 'Direction Technique et Contrôle';
-    } else if (/audit|contrôle/i.test(textContent)) {
-      detectedService = 'Cellule d\'Audit Interne';
-    }
+      let detectedService = 'Direction Générale';
+      if (/finances?|compta/i.test(extractedText) || /finances?/i.test(originalName)) {
+        detectedService = 'Direction des Affaires Financières';
+      } else if (/technique|travaux|route/i.test(extractedText) || /technique/i.test(originalName)) {
+        detectedService = 'Direction Technique et Contrôle';
+      } else if (/audit|contrôle/i.test(extractedText)) {
+        detectedService = 'Cellule d\'Audit Interne';
+      }
 
-    // Nettoyage du fichier temporaire
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-
-    return res.json({
-      success: true,
-      metadata: {
+      metadata = {
         reference: detectedRef,
         subject: detectedSubject,
         recipient: detectedRecipient,
         service: detectedService,
         year: detectedYear,
+        engine: 'heuristics-fallback'
+      };
+    }
+
+    // Nettoyage du fichier temporaire d'analyse
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    return res.json({
+      success: true,
+      engine: metadata.engine,
+      metadata: {
+        reference: metadata.reference,
+        subject: metadata.subject,
+        recipient: metadata.recipient,
+        service: metadata.service,
+        year: metadata.year,
       }
     });
   } catch (error: any) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    console.error('Erreur analyse PDF:', error);
-    return res.status(500).json({ error: 'Échec de l\'analyse automatique du PDF', details: error.message });
+    console.error('Erreur globale analyse PDF:', error);
+    return res.status(500).json({ error: 'Échec de l\'analyse du document', details: error.message });
   }
 }

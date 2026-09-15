@@ -56,13 +56,6 @@ export default function LoginPage() {
           <button type="submit" className="primary-btn" disabled={loading}>
             {loading ? 'Connexion...' : 'Se connecter'}
           </button>
-
-          <div style={{ marginTop: '1.25rem', textAlign: 'center', fontSize: '0.9rem' }}>
-            <span style={{ color: '#64748b' }}>Pas encore de compte agent ? </span>
-            <Link to="/register" style={{ color: '#047857', fontWeight: 600, textDecoration: 'none' }}>
-              Créer un compte
-            </Link>
-          </div>
         </form>
       </div>
     </div>

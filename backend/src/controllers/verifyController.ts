@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import prisma from '../prisma/client';
 import { computeSha256 } from '../utils/demoStore';
 import { validatePdfFile } from '../utils/fileValidation';
+import { getPublicBaseUrl } from '../utils/network';
 
 function extractTokenFromInput(rawValue: string | null | undefined): string | null {
   if (!rawValue) return null;
@@ -156,7 +157,7 @@ export async function verify(req: Request, res: Response) {
           try {
             const { PDFDocument } = require('pdf-lib');
             const QRCode = require('qrcode');
-            const publicBaseUrl = (process.env.PUBLIC_APP_URL || 'http://172.23.27.88:5173').replace(/\/$/, '');
+            const publicBaseUrl = getPublicBaseUrl();
             const verificationUrl = `${publicBaseUrl}/verify?token=${encodeURIComponent(qrRow.token || token)}`;
             const qrDataUrl = await QRCode.toDataURL(verificationUrl);
 
@@ -227,11 +228,13 @@ export async function verify(req: Request, res: Response) {
         reason: matchType,
         qr: { qr_uuid: qrRow.qrUuid, document_id: qrRow.documentId },
         document: {
+          id: document.id,
           reference: document.reference,
           subject: document.subject,
           recipient: document.recipient,
           service: document.service,
           year: document.year,
+          fileName: document.fileName,
         },
       });
     } catch (err: any) {

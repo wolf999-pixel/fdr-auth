@@ -6,7 +6,6 @@ import DashboardPage from './pages/DashboardPage';
 import DocumentFormPage from './pages/DocumentFormPage';
 import HistoryPage from './pages/HistoryPage';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import QrViewPage from './pages/QrViewPage';
 import SecureDocumentsPage from './pages/SecureDocumentsPage';
 import SecureDocumentView from './pages/SecureDocumentView';
@@ -19,7 +18,6 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
           <Route path="/verify" element={<VerifyPage />} />
 
           <Route element={<ProtectedRoute />}>

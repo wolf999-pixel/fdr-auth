@@ -13,6 +13,7 @@ router.get('/', authMiddleware.requireAuth, authMiddleware.requireRole(['agent',
 router.get('/:id', authMiddleware.requireAuth, authMiddleware.requireRole(['agent','admin']), docController.getDocument);
 router.get('/:id/file', authMiddleware.requireAuth, authMiddleware.requireRole(['agent','admin']), docController.getDocumentFile);
 router.get('/:id/secure-pdf', authMiddleware.requireAuth, authMiddleware.requireRole(['agent','admin']), docController.exportSecurePdf);
+router.get('/:id/public-secure-pdf', docController.publicSecurePdf);
 router.post('/:id/qr', authMiddleware.requireAuth, authMiddleware.requireRole(['agent', 'admin']), docController.generateQrForDocument);
 router.post('/:id/signed', authMiddleware.requireAuth, authMiddleware.requireRole(['agent', 'admin']), upload.single('file'), docController.uploadSignedDocument);
 
